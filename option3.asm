@@ -1,20 +1,14 @@
 ; option3.asm
 [BITS 16]
 
-; Option 3 Action - Shutdown
+; Option 3 Action - Boot Kernel
 option3_action:
     call clear_screen              ; clear the screen
-    mov si, msg_shutdown           ; message to display (defined below)
+    mov si, msg_boot_kernel        ; message to display (defined below)
     call print_string_at_top       ; print message at top
-    call wait_for_key              ; wait for key press
-    ; Send shutdown command to QEMU
-    mov dx, 0x604                  ; QEMU shutdown port
-    mov ax, 0x2000                 ; shutdown command
-    out dx, ax                     ; send shutdown command
-.halt_loop:
-    hlt                            ; halt CPU
-    jmp .halt_loop
+    call load_kernel               ; load the kernel
+    ; If load_kernel fails, it will handle the error
+    jmp main_loop                  ; Should not reach here
 
-; Message data
-msg_shutdown:
-    db 'Shutting down...', 0
+msg_boot_kernel:
+    db 'Booting kernel...', 0

@@ -3,16 +3,18 @@
 [ORG 0x7C00]
 
 ; Variables and constants
-num_options EQU 3                   ; total menu options
-selected_option db 0                ; current selected option
-rowsize EQU 80                      ; number of columns per row
+num_options EQU 3
+selected_option db 0
+rowsize EQU 80
+
+kernel_load_segment EQU 0x1000
+kernel_load_offset  EQU 0x0000
 
 start:
     cli                             ; disable interrupts
     xor ax, ax
     mov ds, ax                      ; DS = 0x0000
     mov es, ax                      ; ES = 0x0000
-    mov ax, 0x0000
     mov ss, ax                      ; SS = 0x0000
     mov sp, 0x7000                  ; Set SP to 0x7000 (avoid overlap with code)
     sti                             ; enable interrupts
@@ -112,37 +114,65 @@ handle_enter_key:
 %include "option2.asm"
 %include "option3.asm"
 
+; Function to load the kernel
+load_kernel:
+    ; Display loading message
+    mov si, msg_loading_kernel
+    call print_string_at_top
+
+    ; Load the kernel into ES:BX
+    mov ax, kernel_load_segment     ; ES = 0x1000
+    mov es, ax
+    mov bx, kernel_load_offset      ; BX = 0x0000
+
+    ; Read sectors from disk
+    mov ah, 0x02                    ; BIOS read sectors function
+    mov al, 1                       ; Number of sectors to read (adjust if kernel is larger)
+    mov ch, 0x00                    ; Cylinder 0
+    mov cl, 0x02                    ; Sector 2 (BIOS sector numbers start at 1)
+    mov dh, 0x00                    ; Head 0
+    mov dl, 0x00                    ; Drive 0x00 (floppy)
+    int 0x13                        ; BIOS disk interrupt
+    jc disk_error                   ; Jump if carry flag set (error)
+
+    ; Set up segment registers for the kernel
+    mov ax, kernel_load_segment     ; AX = 0x1000
+    mov ds, ax
+    mov es, ax
+    mov ss, ax
+    mov sp, 0xFFFE                  ; Set SP near top of segment
+    ; Far jump to kernel entry point
+    jmp kernel_load_segment:kernel_load_offset
+
+disk_error:
+    mov si, disk_error_msg
+    call print_string_at_top
+    jmp .halt
+
+.halt:
+    hlt
+    jmp .halt
+
+msg_loading_kernel:
+    db 'Loading kernel...', 0
+
+disk_error_msg:
+    db 'Disk read error!', 0
+
 ; Functions
-print_string_at_top:
-    push ax
-    push bx
-    push cx
-    push dx
-    push si
-    push di
-    push ds                          ; Save DS
-    push es                          ; Save ES
 
-    mov dh, 0                        ; row 0
-    mov dl, 0                        ; column 0
-    call set_cursor                  ; set cursor position
-
-    mov bl, 0x07                     ; white text on black background
-    call print_string_colored        ; print string
-
-    pop es                           ; Restore ES
-    pop ds                           ; Restore DS
-    pop di
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    pop ax
+clear_screen:
+    mov ax, 0x0600                   ; scroll screen up
+    mov bh, 0x07                     ; attribute for blank cells
+    mov cx, 0x0000                   ; start at top-left
+    mov dx, 0x184F                   ; end at bottom-right
+    int 0x10
     ret
 
-wait_for_key:
-    xor ah, ah                       ; wait for key press
-    int 0x16
+set_cursor:
+    mov ah, 0x02                     ; set cursor position function
+    mov bh, 0x00                     ; display page number
+    int 0x10
     ret
 
 print_string_colored:
@@ -194,18 +224,36 @@ print_done_colored:
     pop ax
     ret
 
-clear_screen:
-    mov ax, 0x0600                   ; scroll screen up
-    mov bh, 0x07                     ; attribute for blank cells
-    mov cx, 0x0000                   ; start at top-left
-    mov dx, 0x184F                   ; end at bottom-right
-    int 0x10
+print_string_at_top:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push ds                          ; Save DS
+    push es                          ; Save ES
+
+    mov dh, 0                        ; row 0
+    mov dl, 0                        ; column 0
+    call set_cursor                  ; set cursor position
+
+    mov bl, 0x07                     ; white text on black background
+    call print_string_colored        ; print string
+
+    pop es                           ; Restore ES
+    pop ds                           ; Restore DS
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
     ret
 
-set_cursor:
-    mov ah, 0x02                     ; set cursor position function
-    mov bh, 0x00                     ; display page number
-    int 0x10
+wait_for_key:
+    xor ah, ah                       ; wait for key press
+    int 0x16
     ret
 
 ; Data
@@ -219,7 +267,7 @@ option1_str:
 option2_str:
     db '2. Print hai', 0
 option3_str:
-    db '3. Shutdown', 0
+    db '3. Boot kernel', 0
 
 ; Boot signature
 times 510 - ($ - $$) db 0
