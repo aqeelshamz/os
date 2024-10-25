@@ -1,98 +1,162 @@
 [BITS 16]
 [ORG 0x7C00]
 
-num_options db 4               ; total menu options
+num_options db 3               ; total menu options
 selected_option db 0           
-loop_counter db 0              
-rowsize db 80                  ; no of columns per row
+loop_counter db 0             
+rowsize db 80                  ; number of columns per row
 
 start:
-    cli ; disable interrupts            
+    cli                        ; disable interrupts
     xor ax, ax
-    mov ds, ax           
-    mov es, ax             
-    mov ss, ax              
-    mov sp, 0x7C00         
-    sti      ; enbale interrupts              
+    mov ds, ax                 
+    mov es, ax                 
+    mov ss, ax                 
+    mov sp, 0x7C00             
+    sti                        ; enable interrupts
 
-    ; print boot message
-    mov si, msg_boot
-    call print_string
+    call clear_screen          
 
-    call clear_screen
-
-    ; display menu
-    call display_menu
+    call display_menu          ; display menu
 
 main_loop:
     xor ah, ah                 ; wait for key press
     int 0x16                   ; get key code in AX
 
     cmp al, 0                  ; check if it is special key
-    jne main_loop              ; if not, loop back
+    je handle_special_key      ; if zero, handle special key
 
-    ; handle keysss
+    cmp al, 0x0D               ; check if 'Enter' key (ASCII 13)
+    je handle_enter_key
+
+    jmp main_loop              ; ignore other keys, loop back
+
+handle_special_key:
     int 0x16                   ; get the second byte of the key code in AH
     cmp ah, 0x48               ; up arrow
     je move_up
     cmp ah, 0x50               ; down arrow
     je move_down
 
-    jmp main_loop             
+    jmp main_loop              ; ignore other keys
 
 move_up:
     cmp byte [selected_option], 0
     je set_to_last_option
-    dec byte [selected_option]
+    dec byte [selected_option] ; move selection up
     jmp update_menu
 
 set_to_last_option:
-    mov al, [num_options]
-    dec al
-    mov [selected_option], al
+    mov byte [selected_option], 2  ; wrap to last option (2 for 0-based index)
     jmp update_menu
 
 move_down:
-    inc byte [selected_option]
-    cmp byte [selected_option], 4
+    inc byte [selected_option]     ; move selection down
+    cmp byte [selected_option], 3  ; total options
     jb update_menu
-    mov byte [selected_option], 0
+    mov byte [selected_option], 0  ; wrap to first option
     jmp update_menu
 
 update_menu:
-    call display_menu
+    call display_menu              ; update menu display
     jmp main_loop
 
 display_menu:
-    mov byte [loop_counter], 0
-    mov di, option_ptrs
-    mov dh, 0
-    mov dl, 0
+    mov byte [loop_counter], 0     ; reset loop counter
+    mov di, option_ptrs            ; start of option pointers
+    mov dh, 0                      ; row 0
+    mov dl, 0                      ; column 0
 
 print_menu_loop:
-    mov al, [selected_option]
-    mov cl, [loop_counter]
+    mov al, [selected_option]      ; get selected option
+    mov cl, [loop_counter]         ; get current option index
     cmp cl, al
     jne normal_print
 
-    mov bl, 0x70               ; highlighted option
-    call set_cursor
-    mov si, [di]
-    call print_string_colored
+    mov bl, 0x70                   ; highlighted option
+    call set_cursor                ; set cursor position
+    mov si, [di]                   ; load option string pointer
+    call print_string_colored      ; print highlighted option
     jmp next_option
 
 normal_print:
-    mov bl, 0x07               ; normal option
-    call set_cursor
-    mov si, [di]
-    call print_string_colored
+    mov bl, 0x07                   ; normal option
+    call set_cursor                ; set cursor position
+    mov si, [di]                   ; load option string pointer
+    call print_string_colored      ; print normal option
 
 next_option:
-    add di, 2
-    inc dh
-    inc byte [loop_counter]
-    cmp byte [loop_counter], 4    
+    add di, 2                      ; move to next option pointer
+    inc dh                         ; move to next row
+    inc byte [loop_counter]        ; increment loop counter
+    cmp byte [loop_counter], 3     ; total options
     jb print_menu_loop
+    ret
+
+handle_enter_key:
+    mov al, [selected_option]      ; get selected option
+    cmp al, 0
+    je option1_action
+    cmp al, 1
+    je option2_action
+    cmp al, 2
+    je option3_action
+    jmp main_loop                  ; should not happen
+
+option1_action:
+    call clear_screen
+    mov si, msg_hello
+    call print_string_at_top       ; print message at top
+    call wait_for_key              ; wait for key press
+    call display_menu              ; display menu again
+    jmp main_loop
+
+option2_action:
+    call clear_screen
+    mov si, msg_hai
+    call print_string_at_top       ; print message at top
+    call wait_for_key              ; wait for key press
+    call display_menu              ; display menu again
+    jmp main_loop
+
+option3_action:
+    call clear_screen
+    mov si, msg_shutdown
+    call print_string_at_top       ; print message at top
+    call wait_for_key              ; wait for key press
+    mov dx, 0x604                  ; QEMU shutdown port
+    mov ax, 0x2000                 ; shutdown command
+    out dx, ax                     ; send shutdown command
+halt_loop:
+    hlt                            ; halt CPU
+    jmp halt_loop
+
+print_string_at_top:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+
+    mov dh, 0                      ; row 0
+    mov dl, 0                      ; column 0
+    call set_cursor                ; set cursor position
+
+    mov bl, 0x07                   ; white text on black background
+    call print_string_colored      ; print string
+
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+wait_for_key:
+    xor ah, ah                     ; wait for key press
+    int 0x16
     ret
 
 print_string_colored:
@@ -103,25 +167,25 @@ print_string_colored:
     push di
 
     xor ax, ax
-    mov al, dh
-    mul byte [rowsize]
-    mov di, ax
+    mov al, dh                     ; get row number
+    mul byte [rowsize]             ; row * 80
+    mov di, ax                     ; DI = row offset
 
-    mov al, dl
-    add di, ax
+    mov al, dl                     ; get column number
+    add di, ax                     ; DI = (row * 80) + column
 
-    shl di, 1
+    shl di, 1                      ; multiply by 2 (character + attribute)
 
-    mov ax, 0xB800
+    mov ax, 0xB800                 ; video memory segment
     mov es, ax
 
 print_loop_colored:
-    lodsb
+    lodsb                          ; load character from SI into AL
     or al, al
     jz done_print_colored
-    mov [es:di], al
+    mov [es:di], al                ; write character
     inc di
-    mov [es:di], bl
+    mov [es:di], bl                ; write attribute from BL
     inc di
     jmp print_loop_colored
 
@@ -133,29 +197,17 @@ done_print_colored:
     pop ax
     ret
 
-print_string:
-    mov ah, 0x0E
-print_loop:
-    lodsb
-    or al, al
-    jz done_print
-    int 0x10
-    jmp print_loop
-
-done_print:
-    ret
-
 clear_screen:
-    mov ax, 0x0600
-    mov bh, 0x07
-    mov cx, 0x0000
-    mov dx, 0x184F
+    mov ax, 0x0600                 ; scroll screen up
+    mov bh, 0x07                   ; attribute for blank cells
+    mov cx, 0x0000                 ; start at top-left
+    mov dx, 0x184F                 ; end at bottom-right
     int 0x10
     ret
 
 set_cursor:
-    mov ah, 0x02
-    mov bh, 0x00
+    mov ah, 0x02                   ; set cursor position function
+    mov bh, 0x00                   ; display page number
     int 0x10
     ret
 
@@ -164,14 +216,15 @@ option_ptrs:
     dw option1
     dw option2
     dw option3
-    dw option4
 
-option1 db 'Option 1', 0
-option2 db 'Option 2', 0
-option3 db 'Option 3', 0
-option4 db 'Option 4', 0
+option1 db '1. Print hello', 0
+option2 db '2. Print hai', 0
+option3 db '3. Shutdown', 0
 
-msg_boot db 'Booting...', 0
+msg_hello db 'Hello', 0
+msg_hai db 'Hai', 0
+msg_shutdown db 'Shutting down...', 0
 
+; Boot signature
 times 510 - ($ - $$) db 0
 dw 0xAA55
