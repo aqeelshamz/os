@@ -2,20 +2,20 @@
 [ORG 0x7C00]
 
 num_options db 3               ; total menu options
-selected_option db 0           
-loop_counter db 0             
+selected_option db 0           ; current selected option
+loop_counter db 0              ; loop counter for menu display
 rowsize db 80                  ; number of columns per row
 
 start:
     cli                        ; disable interrupts
     xor ax, ax
-    mov ds, ax                 
-    mov es, ax                 
-    mov ss, ax                 
-    mov sp, 0x7C00             
+    mov ds, ax                 ; set DS to 0
+    mov es, ax                 ; set ES to 0
+    mov ss, ax                 ; set SS to 0
+    mov sp, 0x7C00             ; set SP to 0x7C00
     sti                        ; enable interrupts
 
-    call clear_screen          
+    call clear_screen          ; clear the screen
 
     call display_menu          ; display menu
 
@@ -104,24 +104,24 @@ handle_enter_key:
     jmp main_loop                  ; should not happen
 
 option1_action:
-    call clear_screen
-    mov si, msg_hello
+    call clear_screen              ; clear the screen
+    mov si, msg_hello              ; message to display
     call print_string_at_top       ; print message at top
     call wait_for_key              ; wait for key press
     call display_menu              ; display menu again
     jmp main_loop
 
 option2_action:
-    call clear_screen
-    mov si, msg_hai
+    call clear_screen              ; clear the screen
+    mov si, msg_hai                ; message to display
     call print_string_at_top       ; print message at top
     call wait_for_key              ; wait for key press
     call display_menu              ; display menu again
     jmp main_loop
 
 option3_action:
-    call clear_screen
-    mov si, msg_shutdown
+    call clear_screen              ; clear the screen
+    mov si, msg_shutdown           ; message to display
     call print_string_at_top       ; print message at top
     call wait_for_key              ; wait for key press
     mov dx, 0x604                  ; QEMU shutdown port
